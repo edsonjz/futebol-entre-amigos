@@ -1,32 +1,45 @@
-# React + TypeScript + Vite
+# ⚽ Futebol Entre Amigos
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+Plataforma completa para gestão de peladas e rachas de futebol com amigos.
 
-Currently, two official plugins are available:
+## 🚀 Tecnologias
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+- **Frontend**: React 19 + TypeScript + Vite + Tailwind CSS
+- **Ícones & Animações**: Lucide React + Canvas Confetti
+- **Backend & Database**: Supabase (PostgreSQL, Row Level Security, Realtime)
+- **Hospedagem**: Vercel
 
-## React Compiler
+## ⚙️ Variáveis de Ambiente
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+Crie ou configure o arquivo `.env`:
 
-## Expanding the Oxlint configuration
-
-If you are developing a production application, we recommend enabling type-aware lint rules by installing `oxlint-tsgolint` and editing `.oxlintrc.json`:
-
-```json
-{
-  "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript", "oxc"],
-  "options": {
-    "typeAware": true
-  },
-  "rules": {
-    "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
-}
+```env
+VITE_SUPABASE_URL=https://wlccughbhcqgwfgspjok.supabase.co
+VITE_SUPABASE_ANON_KEY=seu_anon_key_aqui
 ```
 
-See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+## 🛠️ Comandos
+
+```bash
+# Instalar dependências
+npm install
+
+# Iniciar servidor de desenvolvimento
+npm run dev
+
+# Gerar build de produção
+npm run build
+```
+
+## 🌐 Deploy na Vercel
+
+1. Suba o projeto para o GitHub:
+   ```bash
+   git remote add origin https://github.com/<seu-usuario>/futebol-entre-amigos.git
+   git push -u origin main
+   ```
+2. Na Vercel (`https://vercel.com`), clique em **Add New... > Project** e importe o repositório.
+3. Configure as variáveis de ambiente em **Environment Variables**:
+   - `VITE_SUPABASE_URL`
+   - `VITE_SUPABASE_ANON_KEY`
+4. Clique em **Deploy**. O arquivo `vercel.json` já está configurado para gerenciar as rotas SPA.
