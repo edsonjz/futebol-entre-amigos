@@ -1,7 +1,7 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
-import { Profile, Group, GroupMember, UserRole } from '../types/database';
+import { Profile, Group, UserRole } from '../types/database';
 
 interface AuthContextType {
   user: User | null;
@@ -15,6 +15,7 @@ interface AuthContextType {
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
   setCurrentGroup: (group: Group) => void;
+  ensureGroup: () => Promise<Group | null>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -24,123 +25,162 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [currentGroup, setCurrentGroup] = useState<Group | null>(null);
-  const [userRole, setUserRole] = useState<UserRole>('admin'); // Default admin for group organizers
+  const [userRole, setUserRole] = useState<UserRole>('admin');
   const [isLoading, setIsLoading] = useState(true);
 
-  const fetchProfile = async (userId: string) => {
+  const fetchProfileAndRole = useCallback(async (userId: string, userEmail?: string) => {
     try {
       const { data, error } = await supabase
         .from('profiles')
         .select('*')
         .eq('id', userId)
-        .single();
+        .maybeSingle();
 
       if (data && !error) {
         setProfile(data as Profile);
       }
+
+      // Check role in group_members
+      if (userEmail?.toLowerCase() === 'edsonjz@gmail.com') {
+        setUserRole('admin');
+        return;
+      }
+
+      const { data: memberData } = await supabase
+        .from('group_members')
+        .select('role')
+        .eq('user_id', userId)
+        .limit(1)
+        .maybeSingle();
+
+      if (memberData?.role) {
+        setUserRole(memberData.role as UserRole);
+      } else {
+        setUserRole('admin');
+      }
     } catch (err) {
       console.error('Error fetching profile:', err);
     }
-  };
+  }, []);
 
-  const loadOrCreateDefaultGroup = async () => {
+  const loadOrCreateDefaultGroup = useCallback(async (): Promise<Group | null> => {
     try {
-      // Check if any group exists
-      const { data: groups, error } = await supabase
+      const { data: groups } = await supabase
         .from('groups')
         .select('*')
         .order('created_at', { ascending: true })
         .limit(1);
 
       if (groups && groups.length > 0) {
-        setCurrentGroup(groups[0] as Group);
-      } else {
-        // Create initial default soccer group
-        const { data: newGroup, error: createError } = await supabase
-          .from('groups')
-          .insert({
-            name: 'Pelada dos Amigos',
-            description: 'Grupo oficial de futebol entre amigos',
-            default_modality: 'society',
-            default_players_per_team: 7,
-            settings: {
-              overall_weight_ratings: 50,
-              overall_weight_stats: 30,
-              overall_weight_team: 20,
-              enable_finances: true,
-            },
-          })
-          .select()
-          .single();
+        const grp = groups[0] as Group;
+        setCurrentGroup(grp);
+        return grp;
+      }
 
-        if (newGroup && !createError) {
-          setCurrentGroup(newGroup as Group);
-        }
+      const { data: newGroup, error: createError } = await supabase
+        .from('groups')
+        .insert({
+          name: 'Pelada dos Amigos',
+          description: 'Grupo oficial de futebol entre amigos',
+          default_modality: 'society',
+          default_players_per_team: 7,
+          settings: {
+            overall_weight_ratings: 50,
+            overall_weight_stats: 30,
+            overall_weight_team: 20,
+            enable_finances: true,
+          },
+        })
+        .select()
+        .single();
+
+      if (newGroup && !createError) {
+        const grp = newGroup as Group;
+        setCurrentGroup(grp);
+        return grp;
       }
     } catch (err) {
       console.error('Error initializing group:', err);
     }
-  };
+    return null;
+  }, []);
+
+  const ensureGroup = useCallback(async (): Promise<Group | null> => {
+    if (currentGroup?.id) return currentGroup;
+    return await loadOrCreateDefaultGroup();
+  }, [currentGroup, loadOrCreateDefaultGroup]);
 
   useEffect(() => {
+    let mounted = true;
+
     const initAuth = async () => {
       setIsLoading(true);
       try {
-        const { data: { session } } = await supabase.auth.getSession();
-        setSession(session);
-        setUser(session?.user ?? null);
-
-        if (session?.user) {
-          await fetchProfile(session.user.id);
-        }
-
         await loadOrCreateDefaultGroup();
+        const { data: { session: initialSession } } = await supabase.auth.getSession();
+        if (!mounted) return;
+        setSession(initialSession);
+        setUser(initialSession?.user ?? null);
       } catch (err) {
         console.error('Auth initialization error:', err);
       } finally {
-        setIsLoading(false);
+        if (mounted) setIsLoading(false);
       }
     };
 
     initAuth();
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, currentSession) => {
-        setSession(currentSession);
-        setUser(currentSession?.user ?? null);
-        if (currentSession?.user) {
-          await fetchProfile(currentSession.user.id);
-        } else {
-          setProfile(null);
-        }
+    // IMPORTANT: Keep onAuthStateChange synchronous to avoid Supabase v2 NavigatorLock deadlock
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, currentSession) => {
+      if (!mounted) return;
+      setSession(currentSession);
+      setUser(currentSession?.user ?? null);
+      if (!currentSession?.user) {
+        setProfile(null);
+        setUserRole('admin');
       }
-    );
+    });
 
     return () => {
+      mounted = false;
       subscription.unsubscribe();
     };
-  }, []);
+  }, [loadOrCreateDefaultGroup]);
+
+  // Fetch profile and group whenever user changes (outside of auth lock)
+  useEffect(() => {
+    if (user?.id) {
+      fetchProfileAndRole(user.id, user.email);
+      if (!currentGroup?.id) {
+        loadOrCreateDefaultGroup();
+      }
+    }
+  }, [user?.id, user?.email, currentGroup?.id, fetchProfileAndRole, loadOrCreateDefaultGroup]);
 
   const signIn = async (email: string, password: string) => {
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    const { error } = await supabase.auth.signInWithPassword({
+      email: email.trim(),
+      password,
+    });
     return { error };
   };
 
   const signUp = async (email: string, password: string, fullName: string, nickname?: string) => {
     const { data, error } = await supabase.auth.signUp({
-      email,
+      email: email.trim(),
       password,
       options: {
         data: {
-          full_name: fullName,
-          nickname: nickname || fullName.split(' ')[0],
+          full_name: fullName.trim(),
+          nickname: nickname?.trim() || fullName.trim().split(' ')[0],
         },
       },
     });
 
     if (!error && data.user) {
-      // Trigger automatically populates public.profiles
-      await fetchProfile(data.user.id);
+      setTimeout(() => {
+        fetchProfileAndRole(data.user!.id, data.user!.email);
+      }, 200);
     }
 
     return { error };
@@ -151,11 +191,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setUser(null);
     setSession(null);
     setProfile(null);
+    setUserRole('admin');
   };
 
   const refreshProfile = async () => {
     if (user) {
-      await fetchProfile(user.id);
+      await fetchProfileAndRole(user.id, user.email);
     }
   };
 
@@ -173,6 +214,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         signOut,
         refreshProfile,
         setCurrentGroup,
+        ensureGroup,
       }}
     >
       {children}

@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Match, MatchRoster, Player } from '../types/database';
-import { X, DollarSign, CheckCircle2, Clock, Users } from 'lucide-react';
+import { supabase } from '../lib/supabase';
+import { X, DollarSign, CheckCircle2, Clock, Save, Check } from 'lucide-react';
 
 interface FinancesModalProps {
   match: Match;
@@ -16,23 +17,83 @@ export const FinancesModal: React.FC<FinancesModalProps> = ({
   onClose,
 }) => {
   const [fieldCost, setFieldCost] = useState<number>(250);
+  const [paidPlayers, setPaidPlayers] = useState<Set<string>>(new Set());
+  const [isSaving, setIsSaving] = useState(false);
+  const [savedToast, setSavedToast] = useState(false);
+
   const participating = rosters
     .map((r) => r.player || allPlayers.find((p) => p.id === r.player_id))
     .filter((p): p is Player => Boolean(p));
 
-  const [paidPlayers, setPaidPlayers] = useState<Set<string>>(new Set());
-
   const costPerPlayer = participating.length > 0 ? (fieldCost / participating.length).toFixed(2) : '0.00';
   const totalCollected = (paidPlayers.size * parseFloat(costPerPlayer)).toFixed(2);
-  const balance = (parseFloat(totalCollected) - fieldCost).toFixed(2);
 
-  const togglePaid = (id: string) => {
+  useEffect(() => {
+    const loadFinances = async () => {
+      const { data: fin } = await supabase
+        .from('match_finances')
+        .select('*')
+        .eq('match_id', match.id)
+        .maybeSingle();
+
+      if (fin && fin.field_cost !== undefined) {
+        setFieldCost(Number(fin.field_cost));
+      }
+
+      const { data: payments } = await supabase
+        .from('player_payments')
+        .select('*')
+        .eq('match_id', match.id)
+        .eq('is_paid', true);
+
+      if (payments) {
+        setPaidPlayers(new Set(payments.map((p: any) => p.player_id)));
+      }
+    };
+    loadFinances();
+  }, [match.id]);
+
+  const togglePaid = async (playerId: string) => {
+    const isCurrentlyPaid = paidPlayers.has(playerId);
+    const nextState = !isCurrentlyPaid;
+
     setPaidPlayers((prev) => {
       const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
+      if (nextState) next.add(playerId);
+      else next.delete(playerId);
       return next;
     });
+
+    await supabase.from('player_payments').upsert(
+      {
+        match_id: match.id,
+        player_id: playerId,
+        amount: parseFloat(costPerPlayer) || 0,
+        is_paid: nextState,
+        paid_at: nextState ? new Date().toISOString() : null,
+      },
+      { onConflict: 'match_id,player_id' }
+    );
+  };
+
+  const handleSaveFinances = async () => {
+    setIsSaving(true);
+    try {
+      await supabase.from('match_finances').upsert(
+        {
+          match_id: match.id,
+          field_cost: fieldCost,
+          player_fee: parseFloat(costPerPlayer) || 0,
+          total_collected: parseFloat(totalCollected) || 0,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: 'match_id' }
+      );
+      setSavedToast(true);
+      setTimeout(() => setSavedToast(false), 2500);
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
@@ -52,6 +113,13 @@ export const FinancesModal: React.FC<FinancesModalProps> = ({
           <h2 className="text-xl font-black text-white">Controle Financeiro da Partida</h2>
           <p className="text-xs text-slate-400">{match.title}</p>
         </div>
+
+        {savedToast && (
+          <div className="mb-3 p-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs flex items-center gap-2">
+            <Check className="w-4 h-4" />
+            <span>Valores salvos no banco de dados!</span>
+          </div>
+        )}
 
         {/* Financial KPI Cards */}
         <div className="grid grid-cols-3 gap-2 text-center mb-4">
@@ -74,12 +142,23 @@ export const FinancesModal: React.FC<FinancesModalProps> = ({
           <label className="block text-xs font-bold text-slate-300 mb-1">
             Valor Total do Aluguel da Quadra (R$)
           </label>
-          <input
-            type="number"
-            value={fieldCost}
-            onChange={(e) => setFieldCost(parseFloat(e.target.value) || 0)}
-            className="w-full bg-slate-800 border border-slate-700 rounded-xl py-2 px-3 text-sm text-white"
-          />
+          <div className="flex gap-2">
+            <input
+              type="number"
+              value={fieldCost}
+              onChange={(e) => setFieldCost(parseFloat(e.target.value) || 0)}
+              className="flex-1 bg-slate-800 border border-slate-700 rounded-xl py-2 px-3 text-sm text-white"
+            />
+            <button
+              type="button"
+              disabled={isSaving}
+              onClick={handleSaveFinances}
+              className="px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center gap-1 transition"
+            >
+              <Save className="w-3.5 h-3.5" />
+              Salvar
+            </button>
+          </div>
         </div>
 
         {/* List of Players with Paid status toggle */}

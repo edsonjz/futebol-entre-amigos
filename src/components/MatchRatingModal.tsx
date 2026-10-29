@@ -37,8 +37,9 @@ export const MatchRatingModal: React.FC<MatchRatingModalProps> = ({
     .map((r) => r.player || allPlayers.find((p) => p.id === r.player_id))
     .filter((p): p is Player => Boolean(p));
 
-  // Evaluator user ID (fallback to dummy profile id if not authenticated)
-  const currentUserId = user?.id || '00000000-0000-0000-0000-000000000000';
+  // Evaluator user ID (fallback to admin profile id if not authenticated)
+  const currentUserId = user?.id || 'fd711bee-d6bb-491e-8b03-3d2b61b8c7c9';
+
 
   const alreadyRatedIds = new Set(
     existingRatings

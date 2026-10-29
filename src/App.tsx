@@ -43,8 +43,9 @@ import {
 } from 'lucide-react';
 
 export const App: React.FC = () => {
-  const { currentGroup, user, setCurrentGroup } = useAuth();
+  const { currentGroup, user, setCurrentGroup, ensureGroup } = useAuth();
   const [currentTab, setCurrentTab] = useState<NavTab>('matches');
+
 
   // Main Entities State
   const [players, setPlayers] = useState<Player[]>([]);
@@ -204,7 +205,8 @@ export const App: React.FC = () => {
 
   // Quick Seed Roster if 0 players exist
   const handleSeedRoster = async () => {
-    if (!currentGroup?.id) return;
+    const grp = await ensureGroup();
+    if (!grp?.id) return;
     setIsLoading(true);
 
     const initialPlayers = [
@@ -227,7 +229,7 @@ export const App: React.FC = () => {
     try {
       const inserts = initialPlayers.map((p) => ({
         ...p,
-        group_id: currentGroup.id,
+        group_id: grp.id,
         dominant_foot: 'Destro',
         is_active: true,
       }));
@@ -244,45 +246,80 @@ export const App: React.FC = () => {
   };
 
   // Handler: Save or Update Player
-  const handleSavePlayer = async (playerData: Partial<Player>) => {
-    if (!currentGroup?.id) return;
+  const handleSavePlayer = async (playerData: Partial<Player>): Promise<Player | null> => {
+    const grp = await ensureGroup();
+    if (!grp?.id) {
+      throw new Error('Grupo não encontrado. Recarregue a página.');
+    }
 
     if (editingPlayer?.id) {
       const { data, error } = await supabase
         .from('players')
-        .update({ ...playerData, updated_at: new Date().toISOString() })
+        .update({
+          name: playerData.name,
+          nickname: playerData.nickname,
+          photo_url: playerData.photo_url,
+          preferred_position: playerData.preferred_position,
+          dominant_foot: playerData.dominant_foot,
+          base_rating: playerData.base_rating,
+          shirt_number: playerData.shirt_number,
+          notes: playerData.notes,
+          is_active: playerData.is_active,
+          updated_at: new Date().toISOString(),
+        })
         .eq('id', editingPlayer.id)
         .select()
         .single();
 
-      if (!error && data) {
-        setPlayers((prev) => prev.map((p) => (p.id === data.id ? (data as Player) : p)));
+      if (error) throw error;
+      if (data) {
+        const updated = data as Player;
+        setPlayers((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
+        setEditingPlayer(null);
+        return updated;
       }
     } else {
       const { data, error } = await supabase
         .from('players')
-        .insert({ ...playerData, group_id: currentGroup.id })
+        .insert({
+          group_id: grp.id,
+          name: playerData.name,
+          nickname: playerData.nickname,
+          photo_url: playerData.photo_url,
+          preferred_position: playerData.preferred_position || 'Meio-campo',
+          dominant_foot: playerData.dominant_foot || 'Destro',
+          base_rating: playerData.base_rating ?? 6.5,
+          shirt_number: playerData.shirt_number ?? null,
+          notes: playerData.notes ?? null,
+          is_active: playerData.is_active ?? true,
+        })
         .select()
         .single();
 
-      if (!error && data) {
-        setPlayers((prev) => [...prev, data as Player]);
+      if (error) throw error;
+      if (data) {
+        const created = data as Player;
+        setPlayers((prev) => [...prev, created]);
+        setEditingPlayer(null);
+        return created;
       }
     }
-    setEditingPlayer(null);
+    return null;
   };
 
   // Handler: Create Match
   const handleSaveMatch = async (matchData: Partial<Match>, selectedPlayerIds: string[]) => {
-    if (!currentGroup?.id) return;
+    const grp = await ensureGroup();
+    if (!grp?.id) return;
 
     const { data: newMatch, error } = await supabase
       .from('matches')
-      .insert({ ...matchData, group_id: currentGroup.id })
+      .insert({ ...matchData, group_id: grp.id })
       .select()
       .single();
 
     if (error || !newMatch) return;
+
 
     // Create match rosters
     const rostersToInsert = selectedPlayerIds.map((playerId, index) => {
@@ -395,7 +432,7 @@ export const App: React.FC = () => {
   const handleSubmitRating = async (ratingData: Omit<PlayerRating, 'id' | 'created_at'>) => {
     const { data, error } = await supabase
       .from('player_ratings')
-      .upsert(ratingData)
+      .upsert(ratingData, { onConflict: 'match_id,evaluated_player_id,evaluator_id' })
       .select()
       .single();
 
@@ -403,6 +440,7 @@ export const App: React.FC = () => {
       setRatings((prev) => [...prev.filter((r) => r.id !== data.id), data as PlayerRating]);
     }
   };
+
 
   // Handler: Save Group Settings
   const handleSaveGroup = async (updated: Partial<Group>) => {
@@ -676,7 +714,11 @@ export const App: React.FC = () => {
                     <div className="flex items-center gap-3">
                       <div className="w-12 h-12 rounded-2xl bg-slate-800 flex items-center justify-center font-bold text-white overflow-hidden ring-1 ring-slate-700 group-hover:ring-emerald-500 transition">
                         {p.photo_url ? (
-                          <img src={p.photo_url} alt={p.name} className="w-full h-full object-cover" />
+                          p.photo_url.toLowerCase().endsWith('.pdf') || p.photo_url.startsWith('data:application/pdf') ? (
+                            <span className="text-[10px] font-black text-emerald-400 uppercase">PDF</span>
+                          ) : (
+                            <img src={p.photo_url} alt={p.name} className="w-full h-full object-cover" />
+                          )
                         ) : (
                           <span className="text-emerald-400 text-base">
                             {p.nickname?.[0] || p.name[0]}
@@ -692,7 +734,13 @@ export const App: React.FC = () => {
                               #{p.shirt_number}
                             </span>
                           )}
+                          {p.user_id && (
+                            <span className="px-1.5 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/30 text-[9px] font-bold text-emerald-400">
+                              Login Ativo
+                            </span>
+                          )}
                         </div>
+
                         <span className="text-[11px] text-slate-400 block">{p.preferred_position}</span>
                         <div className="flex items-center gap-2 text-[10px] text-slate-500 mt-1">
                           <span>{stat?.matches_played || 0} jogos</span>
