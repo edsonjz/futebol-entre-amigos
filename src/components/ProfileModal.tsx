@@ -264,3 +264,4 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ onClose, player, onP
     </div>
   );
 };
+

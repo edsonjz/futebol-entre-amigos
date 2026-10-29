@@ -543,3 +543,4 @@ export const PollsView: React.FC<PollsViewProps> = ({ groupId }) => {
     </div>
   );
 };
+
