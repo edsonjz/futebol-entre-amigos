@@ -187,3 +187,34 @@ export interface PlayerStats {
   mvp_count: number;
   clean_sheets?: number;
 }
+
+export interface PollOption {
+  id: string;
+  text: string;
+}
+
+export interface Poll {
+  id: string;
+  group_id: string;
+  created_by: string;
+  title: string;
+  description?: string | null;
+  poll_type: 'custom' | 'presence' | 'mvp';
+  match_id?: string | null;
+  options: PollOption[];
+  is_closed: boolean;
+  expires_at?: string | null;
+  created_at: string;
+  updated_at?: string;
+  votes_count?: number;
+  user_voted_option_id?: string | null;
+}
+
+export interface PollVote {
+  id: string;
+  poll_id: string;
+  user_id: string;
+  option_id: string;
+  created_at: string;
+}
+

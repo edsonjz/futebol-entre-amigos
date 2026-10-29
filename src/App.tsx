@@ -21,7 +21,10 @@ import { PlayerModal } from './components/PlayerModal';
 import { MatchCreatorModal } from './components/MatchCreatorModal';
 import { FinancesModal } from './components/FinancesModal';
 import { GroupSettingsModal } from './components/GroupSettingsModal';
+import { PollsView } from './components/PollsView';
+import { ProfileModal } from './components/ProfileModal';
 import {
+
   Calendar,
   Users,
   Trophy,
@@ -62,6 +65,11 @@ export const App: React.FC = () => {
   const [showRatingModal, setShowRatingModal] = useState(false);
   const [showFinancesModal, setShowFinancesModal] = useState(false);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
+  const [showProfileModal, setShowProfileModal] = useState(false);
+
+  // Linked player for current user
+  const myPlayer = players.find((p) => p.user_id === user?.id) || null;
+
 
   // Fetch initial group data
   const fetchData = async () => {
@@ -413,7 +421,11 @@ export const App: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col pb-20 selection:bg-emerald-500 selection:text-slate-950">
-      <Navbar onOpenSettings={() => setShowSettingsModal(true)} />
+      <Navbar
+        onOpenSettings={() => setShowSettingsModal(true)}
+        onOpenProfile={() => setShowProfileModal(true)}
+      />
+
 
       <main className="flex-1 max-w-5xl w-full mx-auto px-4 py-5 space-y-6">
         {/* TABS: MATCHES */}
@@ -703,8 +715,14 @@ export const App: React.FC = () => {
           </div>
         )}
 
+        {/* TABS: POLLS */}
+        {currentTab === 'polls' && currentGroup?.id && (
+          <PollsView groupId={currentGroup.id} />
+        )}
+
         {/* TABS: RANKINGS */}
         {currentTab === 'rankings' && <RankingsView stats={playerStats} />}
+
 
         {/* TABS: SETTINGS / GROUP */}
         {currentTab === 'settings' && (
@@ -757,12 +775,22 @@ export const App: React.FC = () => {
           player={editingPlayer}
           groupId={currentGroup?.id || ''}
           onSave={handleSavePlayer}
+          onPlayerAccountCreated={fetchData}
           onClose={() => {
             setShowPlayerModal(false);
             setEditingPlayer(null);
           }}
         />
       )}
+
+      {showProfileModal && (
+        <ProfileModal
+          player={myPlayer}
+          onClose={() => setShowProfileModal(false)}
+          onProfileUpdated={fetchData}
+        />
+      )}
+
 
       {showMatchModal && (
         <MatchCreatorModal

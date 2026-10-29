@@ -5,12 +5,14 @@ import { AuthModal } from './AuthModal';
 
 interface NavbarProps {
   onOpenSettings: () => void;
+  onOpenProfile: () => void;
 }
 
-export const Navbar: React.FC<NavbarProps> = ({ onOpenSettings }) => {
+export const Navbar: React.FC<NavbarProps> = ({ onOpenSettings, onOpenProfile }) => {
   const { user, profile, currentGroup, signOut } = useAuth();
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
+
 
   return (
     <>
@@ -69,6 +71,16 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenSettings }) => {
                     <button
                       onClick={() => {
                         setShowProfileMenu(false);
+                        onOpenProfile();
+                      }}
+                      className="w-full text-left px-3 py-2 text-xs text-slate-300 hover:bg-slate-800 flex items-center gap-2"
+                    >
+                      <UserIcon className="w-4 h-4 text-emerald-400" />
+                      Meu Perfil & Foto
+                    </button>
+                    <button
+                      onClick={() => {
+                        setShowProfileMenu(false);
                         onOpenSettings();
                       }}
                       className="w-full text-left px-3 py-2 text-xs text-slate-300 hover:bg-slate-800 flex items-center gap-2"
@@ -76,6 +88,7 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenSettings }) => {
                       <Shield className="w-4 h-4 text-emerald-400" />
                       Configurações do Grupo
                     </button>
+
                     <button
                       onClick={() => {
                         setShowProfileMenu(false);

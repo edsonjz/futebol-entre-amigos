@@ -1,12 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { Player, PlayerPosition, DominantFoot } from '../types/database';
-import { X, User, Image, Shield, Sparkles, Hash } from 'lucide-react';
+import { supabase } from '../lib/supabase';
+import { X, User, Image, Shield, Sparkles, Hash, Key, Check, Lock, Mail } from 'lucide-react';
 
 interface PlayerModalProps {
   player?: Player | null;
   groupId: string;
   onSave: (playerData: Partial<Player>) => Promise<void>;
   onClose: () => void;
+  onPlayerAccountCreated?: () => void;
 }
 
 export const PlayerModal: React.FC<PlayerModalProps> = ({
@@ -14,6 +16,7 @@ export const PlayerModal: React.FC<PlayerModalProps> = ({
   groupId,
   onSave,
   onClose,
+  onPlayerAccountCreated,
 }) => {
   const [name, setName] = useState(player?.name || '');
   const [nickname, setNickname] = useState(player?.nickname || '');
@@ -25,6 +28,52 @@ export const PlayerModal: React.FC<PlayerModalProps> = ({
   const [notes, setNotes] = useState(player?.notes || '');
   const [isActive, setIsActive] = useState(player?.is_active ?? true);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Player account creation state
+  const [showCreateAccount, setShowCreateAccount] = useState(false);
+  const [accountEmail, setAccountEmail] = useState('');
+  const [accountPassword, setAccountPassword] = useState('123456');
+  const [accountLoading, setAccountLoading] = useState(false);
+  const [accountSuccess, setAccountSuccess] = useState<string | null>(null);
+  const [accountError, setAccountError] = useState<string | null>(null);
+  const [hasLinkedAccount, setHasLinkedAccount] = useState(!!player?.user_id);
+
+  const handleCreateAccountForPlayer = async () => {
+    if (!player?.id) {
+      setAccountError('Salve o jogador primeiro antes de criar o acesso de login.');
+      return;
+    }
+    if (!accountEmail.trim() || !accountPassword.trim()) {
+      setAccountError('Informe o e-mail e a senha do jogador.');
+      return;
+    }
+    setAccountLoading(true);
+    setAccountError(null);
+    setAccountSuccess(null);
+
+    try {
+      const { data, error } = await supabase.rpc('create_player_user', {
+        p_player_id: player.id,
+        p_email: accountEmail.trim(),
+        p_password: accountPassword.trim(),
+        p_full_name: name.trim(),
+        p_nickname: nickname.trim() || null,
+      });
+
+      if (error) throw error;
+
+      setHasLinkedAccount(true);
+      setAccountSuccess(`Acesso criado com sucesso! E-mail: ${accountEmail} / Senha: ${accountPassword}`);
+      if (onPlayerAccountCreated) onPlayerAccountCreated();
+    } catch (err: any) {
+      console.error('Error creating user for player:', err);
+      setAccountError(err.message || 'Erro ao criar conta para este jogador.');
+    } finally {
+      setAccountLoading(false);
+    }
+  };
+
+
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -204,6 +253,89 @@ export const PlayerModal: React.FC<PlayerModalProps> = ({
               className="w-4 h-4 rounded text-emerald-500 bg-slate-800 border-slate-700 focus:ring-emerald-500"
             />
           </div>
+
+          {/* User Account / Access for this player */}
+          {player && (
+            <div className="p-3.5 rounded-2xl bg-slate-950/70 border border-slate-800 space-y-2.5">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5 text-xs font-bold text-slate-200">
+                  <Key className="w-4 h-4 text-emerald-400" />
+                  <span>Acesso / Login do Jogador</span>
+                </div>
+                {hasLinkedAccount ? (
+                  <span className="text-[11px] font-bold text-emerald-400 bg-emerald-950/60 px-2 py-0.5 rounded-md border border-emerald-900/60 flex items-center gap-1">
+                    <Check className="w-3 h-3" /> Conta Vinculada
+                  </span>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setShowCreateAccount(!showCreateAccount)}
+                    className="text-[11px] font-bold text-emerald-400 hover:text-emerald-300"
+                  >
+                    {showCreateAccount ? 'Cancelar' : '+ Criar Login'}
+                  </button>
+                )}
+              </div>
+
+              {hasLinkedAccount && (
+                <p className="text-[11px] text-slate-400">
+                  Este jogador já possui login ativo e pode votar em enquetes e alterar a própria foto.
+                </p>
+              )}
+
+              {showCreateAccount && !hasLinkedAccount && (
+                <div className="pt-2 border-t border-slate-800 space-y-2 animate-fade-in">
+                  <p className="text-[11px] text-slate-400">
+                    Crie um e-mail e senha para que este amigo acesse o app, altere a foto do perfil e participe das votações:
+                  </p>
+
+                  {accountError && (
+                    <div className="p-2 rounded-lg bg-rose-500/10 border border-rose-500/30 text-rose-300 text-[11px]">
+                      {accountError}
+                    </div>
+                  )}
+
+                  {accountSuccess && (
+                    <div className="p-2 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-[11px]">
+                      {accountSuccess}
+                    </div>
+                  )}
+
+                  <div className="space-y-2">
+                    <div className="relative">
+                      <Mail className="absolute left-2.5 top-2 w-3.5 h-3.5 text-slate-500" />
+                      <input
+                        type="email"
+                        value={accountEmail}
+                        onChange={(e) => setAccountEmail(e.target.value)}
+                        placeholder="E-mail do jogador (ex: amigo@gmail.com)"
+                        className="w-full bg-slate-900 border border-slate-700 rounded-xl py-1.5 pl-8 pr-3 text-xs text-white"
+                      />
+                    </div>
+                    <div className="relative">
+                      <Lock className="absolute left-2.5 top-2 w-3.5 h-3.5 text-slate-500" />
+                      <input
+                        type="text"
+                        value={accountPassword}
+                        onChange={(e) => setAccountPassword(e.target.value)}
+                        placeholder="Senha de acesso"
+                        className="w-full bg-slate-900 border border-slate-700 rounded-xl py-1.5 pl-8 pr-3 text-xs text-white"
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      disabled={accountLoading || !accountEmail.trim() || !accountPassword.trim()}
+                      onClick={handleCreateAccountForPlayer}
+                      className="w-full py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs transition disabled:opacity-50"
+                    >
+                      {accountLoading ? 'Criando Conta...' : 'Salvar e Gerar Acesso'}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
 
           <button
             type="submit"

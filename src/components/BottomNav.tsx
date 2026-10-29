@@ -1,7 +1,7 @@
 import React from 'react';
-import { Calendar, Users, Trophy, Settings, BarChart2 } from 'lucide-react';
+import { Calendar, Users, Trophy, Settings, Vote } from 'lucide-react';
 
-export type NavTab = 'matches' | 'players' | 'rankings' | 'settings';
+export type NavTab = 'matches' | 'players' | 'polls' | 'rankings' | 'settings';
 
 interface BottomNavProps {
   currentTab: NavTab;
@@ -12,13 +12,15 @@ export const BottomNav: React.FC<BottomNavProps> = ({ currentTab, onSelectTab })
   const tabs = [
     { id: 'matches', label: 'Partidas', icon: Calendar },
     { id: 'players', label: 'Jogadores', icon: Users },
+    { id: 'polls', label: 'Enquetes', icon: Vote },
     { id: 'rankings', label: 'Rankings', icon: Trophy },
     { id: 'settings', label: 'Grupo', icon: Settings },
   ] as const;
 
   return (
     <nav className="fixed bottom-0 left-0 right-0 z-40 bg-slate-900/95 backdrop-blur-md border-t border-slate-800 pb-safe">
-      <div className="max-w-md mx-auto grid grid-cols-4 h-16">
+      <div className="max-w-md mx-auto grid grid-cols-5 h-16">
+
         {tabs.map((tab) => {
           const Icon = tab.icon;
           const isActive = currentTab === tab.id;
