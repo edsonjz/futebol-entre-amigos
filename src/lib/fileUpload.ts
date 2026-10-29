@@ -123,3 +123,4 @@ export const uploadPlayerFile = async (file: File): Promise<string> => {
 
   return dataUrl;
 };
+

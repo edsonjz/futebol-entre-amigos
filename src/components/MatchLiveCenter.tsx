@@ -98,10 +98,9 @@ export const MatchLiveCenter: React.FC<MatchLiveCenterProps> = ({
     .map((r) => r.player || allPlayers.find((p) => p.id === r.player_id))
     .filter((p): p is Player => Boolean(p));
 
-  // Handle Goal Registration
-  const handleRegisterGoal = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (isSubmitting || !goalScorerId) return;
+  // Instant 1-tap Goal Registration (for both form and direct button click)
+  const submitQuickGoal = async (scorerId: string, assistantId: string | null = null, ownGoal = isOwnGoal) => {
+    if (isSubmitting || !scorerId) return;
     setIsSubmitting(true);
 
     try {
@@ -111,17 +110,16 @@ export const MatchLiveCenter: React.FC<MatchLiveCenterProps> = ({
       await onAddEvent({
         match_id: match.id,
         team: goalTeam,
-        event_type: isOwnGoal ? 'own_goal' : 'goal',
-        player_id: goalScorerId,
-        assist_player_id: goalAssistantId || null,
+        event_type: ownGoal ? 'own_goal' : 'goal',
+        player_id: scorerId,
+        assist_player_id: assistantId || null,
         minute: currentMinute,
         period: currentPeriod,
-        details: isOwnGoal ? 'Gol Contra' : undefined,
+        details: ownGoal ? 'Gol Contra' : undefined,
       });
 
       await onUpdateMatchScore(newScoreA, newScoreB);
 
-      // Trigger Confetti!
       confetti({
         particleCount: 60,
         spread: 70,
@@ -138,6 +136,13 @@ export const MatchLiveCenter: React.FC<MatchLiveCenterProps> = ({
       setIsSubmitting(false);
     }
   };
+
+  // Handle Goal Registration
+  const handleRegisterGoal = async (e: React.FormEvent) => {
+    e.preventDefault();
+    await submitQuickGoal(goalScorerId, goalAssistantId || null, isOwnGoal);
+  };
+
 
   // Handle Substitution Registration
   const handleRegisterSub = async (e: React.FormEvent) => {
@@ -436,25 +441,29 @@ export const MatchLiveCenter: React.FC<MatchLiveCenterProps> = ({
         )}
       </div>
 
-      {/* REGISTRAR GOL MODAL */}
+      {/* REGISTRAR GOL MODAL (AGILE 1-TAP VISUAL FLOW) */}
       {showGoalModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-fade-in">
-          <div className="w-full max-w-sm bg-slate-900 border border-slate-800 rounded-3xl p-5 shadow-2xl relative">
+          <div className="w-full max-w-md bg-slate-900 border border-slate-800 rounded-3xl p-5 shadow-2xl relative max-h-[90vh] overflow-y-auto">
             <button
-              onClick={() => setShowGoalModal(false)}
+              onClick={() => {
+                setShowGoalModal(false);
+                setGoalScorerId('');
+                setGoalAssistantId('');
+              }}
               className="absolute top-4 right-4 text-slate-400 hover:text-white"
             >
               <X className="w-5 h-5" />
             </button>
 
             <h3 className="text-lg font-black text-white mb-4 flex items-center gap-2">
-              <span className="text-2xl">⚽</span> Registrar Gol
+              <span className="text-2xl">⚽</span> Registrar Gol Rápido
             </h3>
 
-            <form onSubmit={handleRegisterGoal} className="space-y-3.5">
+            <div className="space-y-4">
               {/* Select Team */}
               <div>
-                <label className="block text-xs font-bold text-slate-300 mb-1">Equipe que marcou</label>
+                <label className="block text-xs font-bold text-slate-300 mb-1.5">1. Equipe que marcou</label>
                 <div className="grid grid-cols-2 gap-2">
                   <button
                     type="button"
@@ -463,9 +472,9 @@ export const MatchLiveCenter: React.FC<MatchLiveCenterProps> = ({
                       setGoalScorerId('');
                       setGoalAssistantId('');
                     }}
-                    className={`py-2 px-3 rounded-xl border text-xs font-bold transition flex items-center justify-center gap-1.5 ${
+                    className={`py-2.5 px-3 rounded-xl border text-xs font-bold transition flex items-center justify-center gap-1.5 ${
                       goalTeam === 'A'
-                        ? 'bg-emerald-600 text-white border-emerald-500'
+                        ? 'bg-emerald-600 text-white border-emerald-500 shadow-lg shadow-emerald-950/50'
                         : 'bg-slate-800 text-slate-400 border-slate-700'
                     }`}
                   >
@@ -479,9 +488,9 @@ export const MatchLiveCenter: React.FC<MatchLiveCenterProps> = ({
                       setGoalScorerId('');
                       setGoalAssistantId('');
                     }}
-                    className={`py-2 px-3 rounded-xl border text-xs font-bold transition flex items-center justify-center gap-1.5 ${
+                    className={`py-2.5 px-3 rounded-xl border text-xs font-bold transition flex items-center justify-center gap-1.5 ${
                       goalTeam === 'B'
-                        ? 'bg-emerald-600 text-white border-emerald-500'
+                        ? 'bg-emerald-600 text-white border-emerald-500 shadow-lg shadow-emerald-950/50'
                         : 'bg-slate-800 text-slate-400 border-slate-700'
                     }`}
                   >
@@ -490,70 +499,100 @@ export const MatchLiveCenter: React.FC<MatchLiveCenterProps> = ({
                 </div>
               </div>
 
-              {/* Author of Goal */}
-              <div>
-                <label className="block text-xs font-bold text-slate-300 mb-1">Autor do Gol</label>
-                <select
-                  required
-                  value={goalScorerId}
-                  onChange={(e) => setGoalScorerId(e.target.value)}
-                  className="w-full bg-slate-800 border border-slate-700 rounded-xl py-2 px-3 text-sm text-white focus:outline-none focus:border-emerald-500"
-                >
-                  <option value="">Selecione o jogador...</option>
-                  {(goalTeam === 'A' ? teamAPlayers : teamBPlayers).map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.nickname || p.name} ({p.preferred_position})
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Assistant (Optional) */}
-              <div>
-                <label className="block text-xs font-bold text-slate-300 mb-1">
-                  Assistência (Opcional)
-                </label>
-                <select
-                  value={goalAssistantId}
-                  onChange={(e) => setGoalAssistantId(e.target.value)}
-                  className="w-full bg-slate-800 border border-slate-700 rounded-xl py-2 px-3 text-sm text-white focus:outline-none focus:border-emerald-500"
-                >
-                  <option value="">Nenhuma (Jogada individual / Pênalti)</option>
-                  {(goalTeam === 'A' ? teamAPlayers : teamBPlayers)
-                    .filter((p) => p.id !== goalScorerId)
-                    .map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.nickname || p.name}
-                      </option>
+              {/* Step 1: Select Author of Goal */}
+              {!goalScorerId ? (
+                <div>
+                  <label className="block text-xs font-bold text-emerald-400 mb-2">
+                    2. Toque em quem fez o Gol:
+                  </label>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 max-h-60 overflow-y-auto pr-1">
+                    {(goalTeam === 'A' ? teamAPlayers : teamBPlayers).map((p) => (
+                      <button
+                        key={p.id}
+                        type="button"
+                        onClick={() => setGoalScorerId(p.id)}
+                        className="p-2.5 rounded-2xl bg-slate-800 hover:bg-emerald-950/70 border border-slate-700 hover:border-emerald-500 text-left transition flex items-center gap-2 active:scale-95"
+                      >
+                        <div className="w-8 h-8 rounded-full bg-slate-700 flex items-center justify-center text-xs font-bold text-emerald-400 shrink-0">
+                          {p.nickname?.[0] || p.name[0]}
+                        </div>
+                        <span className="text-xs font-bold text-white truncate">
+                          {p.nickname || p.name.split(' ')[0]}
+                        </span>
+                      </button>
                     ))}
-                </select>
-              </div>
+                  </div>
+                </div>
+              ) : (
+                /* Step 2: 1-Tap Assist or No Assist */
+                <div className="space-y-3 animate-fade-in">
+                  <div className="flex items-center justify-between bg-slate-950 p-3 rounded-2xl border border-slate-800">
+                    <span className="text-xs text-slate-300">
+                      Autor do Gol:{' '}
+                      <strong className="text-emerald-400">
+                        {(goalTeam === 'A' ? teamAPlayers : teamBPlayers).find((p) => p.id === goalScorerId)?.nickname ||
+                          (goalTeam === 'A' ? teamAPlayers : teamBPlayers).find((p) => p.id === goalScorerId)?.name}
+                      </strong>
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setGoalScorerId('')}
+                      className="text-[11px] text-amber-400 hover:underline font-bold"
+                    >
+                      Trocar Autor
+                    </button>
+                  </div>
 
-              {/* Gol Contra Toggle */}
-              <div className="flex items-center gap-2 pt-1">
-                <input
-                  type="checkbox"
-                  id="ownGoal"
-                  checked={isOwnGoal}
-                  onChange={(e) => setIsOwnGoal(e.target.checked)}
-                  className="rounded bg-slate-800 border-slate-700 text-emerald-500 focus:ring-emerald-500"
-                />
-                <label htmlFor="ownGoal" className="text-xs text-slate-300">
-                  Gol Contra
-                </label>
-              </div>
+                  <button
+                    type="button"
+                    disabled={isSubmitting}
+                    onClick={() => submitQuickGoal(goalScorerId, null, false)}
+                    className="w-full py-3 rounded-2xl bg-gradient-to-r from-emerald-600 to-green-600 hover:from-emerald-500 hover:to-green-500 text-white font-black text-xs shadow-lg shadow-emerald-950/50 transition active:scale-95"
+                  >
+                    ⚡ GOL SEM ASSISTÊNCIA (1 TOQUE)
+                  </button>
 
-              <button
-                type="submit"
-                disabled={isSubmitting || !goalScorerId}
-                className="w-full py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-green-600 hover:from-emerald-500 hover:to-green-500 text-white font-bold text-sm shadow-lg shadow-emerald-950/50 transition active:scale-95 disabled:opacity-50 mt-2"
-              >
-                {isSubmitting ? 'Salvando...' : 'Confirmar Gol ⚽'}
-              </button>
-            </form>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-300 mb-2">
+                      👟 Ou toque em quem deu a Assistência (já salva na hora):
+                    </label>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 max-h-48 overflow-y-auto pr-1">
+                      {(goalTeam === 'A' ? teamAPlayers : teamBPlayers)
+                        .filter((p) => p.id !== goalScorerId)
+                        .map((p) => (
+                          <button
+                            key={p.id}
+                            type="button"
+                            disabled={isSubmitting}
+                            onClick={() => submitQuickGoal(goalScorerId, p.id, false)}
+                            className="p-2.5 rounded-2xl bg-slate-800 hover:bg-emerald-950/70 border border-slate-700 hover:border-emerald-500 text-left transition flex items-center gap-2 active:scale-95"
+                          >
+                            <div className="w-7 h-7 rounded-full bg-slate-700 flex items-center justify-center text-[11px] font-bold text-sky-400 shrink-0">
+                              👟
+                            </div>
+                            <span className="text-xs font-bold text-white truncate">
+                              {p.nickname || p.name.split(' ')[0]}
+                            </span>
+                          </button>
+                        ))}
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    disabled={isSubmitting}
+                    onClick={() => submitQuickGoal(goalScorerId, null, true)}
+                    className="w-full py-2 rounded-xl bg-slate-800 hover:bg-rose-950/40 text-rose-400 border border-slate-700 text-xs font-bold transition"
+                  >
+                    Registrar como Gol Contra
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}
+
 
       {/* SUBSTITUIÇÃO MODAL */}
       {showSubModal && (

@@ -609,10 +609,16 @@ export const App: React.FC = () => {
                     <VirtualPitch
                       match={activeMatch}
                       rosters={rosters}
+                      events={events}
                       allPlayers={players}
                       onUpdateRosters={handleUpdateRosters}
+                      onAddEvent={handleAddEvent}
+                      onDeleteEvent={handleDeleteEvent}
+                      onUpdateMatchScore={handleUpdateScore}
+                      onFinishMatch={handleFinishMatch}
                     />
                   ) : (
+
                     <MatchLiveCenter
                       match={activeMatch}
                       rosters={rosters}
