@@ -1,6 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { Player, PlayerPosition, DominantFoot } from '../types/database';
 import { supabase } from '../lib/supabase';
+import { useAuth } from '../context/AuthContext';
 import { uploadPlayerFile } from '../lib/fileUpload';
 import {
   X,
@@ -21,6 +22,7 @@ interface PlayerModalProps {
   player?: Player | null;
   groupId: string;
   onSave: (playerData: Partial<Player>) => Promise<Player | null>;
+  onDeletePlayer?: (playerId: string) => Promise<void>;
   onClose: () => void;
   onPlayerAccountCreated?: () => void;
 }
@@ -29,9 +31,11 @@ export const PlayerModal: React.FC<PlayerModalProps> = ({
   player,
   groupId,
   onSave,
+  onDeletePlayer,
   onClose,
   onPlayerAccountCreated,
 }) => {
+  const { isAdmin } = useAuth();
   const [name, setName] = useState(player?.name || '');
   const [nickname, setNickname] = useState(player?.nickname || '');
   const [photoUrl, setPhotoUrl] = useState(player?.photo_url || '');
@@ -485,6 +489,28 @@ export const PlayerModal: React.FC<PlayerModalProps> = ({
               ? 'Atualizar Jogador'
               : 'Adicionar à Pelada'}
           </button>
+
+          {player?.id && isAdmin && onDeletePlayer && (
+            <button
+              type="button"
+              disabled={isSubmitting}
+              onClick={async () => {
+                if (confirm(`Deseja realmente excluir o jogador "${player.nickname || player.name}"?`)) {
+                  setIsSubmitting(true);
+                  try {
+                    await onDeletePlayer(player.id);
+                    onClose();
+                  } finally {
+                    setIsSubmitting(false);
+                  }
+                }
+              }}
+              className="w-full py-2.5 rounded-xl bg-rose-950/50 hover:bg-rose-900/60 border border-rose-800/60 text-rose-300 font-bold text-xs flex items-center justify-center gap-1.5 transition"
+            >
+              <Trash2 className="w-4 h-4" />
+              <span>Excluir Jogador Permanentemente</span>
+            </button>
+          )}
         </form>
       </div>
     </div>

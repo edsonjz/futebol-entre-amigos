@@ -40,11 +40,12 @@ import {
   Clock,
   Shield,
   Activity,
-  UserCheck
+  UserCheck,
+  Trash2
 } from 'lucide-react';
 
 export const App: React.FC = () => {
-  const { currentGroup, user, setCurrentGroup, ensureGroup } = useAuth();
+  const { currentGroup, user, isAdmin, setCurrentGroup, ensureGroup } = useAuth();
   const [currentTab, setCurrentTab] = useState<NavTab>('matches');
 
 
@@ -161,36 +162,45 @@ export const App: React.FC = () => {
   useEffect(() => {
     if (!activeMatch?.id) return;
 
-    const channel = supabase
-      .channel('match-realtime')
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'matches', filter: `id=eq.${activeMatch.id}` },
-        (payload) => {
-          if (payload.new) {
-            setActiveMatch(payload.new as Match);
-            setMatches((prev) => prev.map((m) => (m.id === activeMatch.id ? (payload.new as Match) : m)));
+    const channelName = `match-realtime-${activeMatch.id}-${Math.random().toString(36).slice(2, 8)}`;
+    let channel: ReturnType<typeof supabase.channel> | null = null;
+
+    try {
+      channel = supabase
+        .channel(channelName)
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'matches', filter: `id=eq.${activeMatch.id}` },
+          (payload) => {
+            if (payload.new) {
+              setActiveMatch(payload.new as Match);
+              setMatches((prev) => prev.map((m) => (m.id === activeMatch.id ? (payload.new as Match) : m)));
+            }
           }
-        }
-      )
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'match_rosters', filter: `match_id=eq.${activeMatch.id}` },
-        () => {
-          fetchActiveMatchDetails(activeMatch.id);
-        }
-      )
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'match_events', filter: `match_id=eq.${activeMatch.id}` },
-        () => {
-          fetchActiveMatchDetails(activeMatch.id);
-        }
-      )
-      .subscribe();
+        )
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'match_rosters', filter: `match_id=eq.${activeMatch.id}` },
+          () => {
+            fetchActiveMatchDetails(activeMatch.id);
+          }
+        )
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'match_events', filter: `match_id=eq.${activeMatch.id}` },
+          () => {
+            fetchActiveMatchDetails(activeMatch.id);
+          }
+        )
+        .subscribe();
+    } catch (err) {
+      console.error('Match realtime setup error:', err);
+    }
 
     return () => {
-      supabase.removeChannel(channel);
+      if (channel) {
+        supabase.removeChannel(channel).catch(() => {});
+      }
     };
   }, [activeMatch?.id]);
 
@@ -386,18 +396,104 @@ export const App: React.FC = () => {
     }
   };
 
-  // Handler: Delete Match Event
+  // Handler: Delete Match Event (Admin only)
   const handleDeleteEvent = async (eventId: string) => {
-    await supabase.from('match_events').delete().eq('id', eventId);
-    setEvents((prev) => prev.filter((e) => e.id !== eventId));
+    if (!isAdmin) {
+      alert('Apenas o administrador pode excluir gols ou eventos.');
+      return;
+    }
+    const { error } = await supabase.from('match_events').delete().eq('id', eventId);
+    if (!error) {
+      setEvents((prev) => prev.filter((e) => e.id !== eventId));
+    }
+  };
+
+  // Handler: Delete Player (Admin only)
+  const handleDeletePlayer = async (playerId: string) => {
+    if (!isAdmin) {
+      alert('Apenas o administrador pode excluir jogadores.');
+      return;
+    }
+    const { error } = await supabase.from('players').delete().eq('id', playerId);
+    if (error) {
+      alert('Erro ao excluir jogador: ' + error.message);
+      return;
+    }
+    setPlayers((prev) => prev.filter((p) => p.id !== playerId));
+    setRosters((prev) => prev.filter((r) => r.player_id !== playerId));
+  };
+
+  // Handler: Delete Match (Admin only)
+  const handleDeleteMatch = async (matchId: string, matchTitle?: string) => {
+    if (!isAdmin) {
+      alert('Apenas o administrador pode excluir partidas.');
+      return;
+    }
+    if (!confirm(`Deseja realmente excluir a partida "${matchTitle || 'selecionada'}" e todos os seus gols/votos?`)) {
+      return;
+    }
+    const { error } = await supabase.from('matches').delete().eq('id', matchId);
+    if (error) {
+      alert('Erro ao excluir partida: ' + error.message);
+      return;
+    }
+    const remaining = matches.filter((m) => m.id !== matchId);
+    setMatches(remaining);
+    if (activeMatch?.id === matchId) {
+      setActiveMatch(remaining[0] || null);
+      if (!remaining[0]) {
+        setRosters([]);
+        setEvents([]);
+      }
+    }
+  };
+
+  // Handler: Clear Finished Matches History (Admin only)
+  const handleClearHistory = async () => {
+    if (!isAdmin || !currentGroup?.id) {
+      alert('Apenas o administrador pode limpar o histórico.');
+      return;
+    }
+    const finishedCount = matches.filter((m) => m.status === 'finished').length;
+    if (finishedCount === 0) {
+      alert('Não há partidas encerradas no histórico para excluir.');
+      return;
+    }
+    if (
+      !confirm(
+        `Deseja realmente excluir todas as ${finishedCount} partidas encerradas do histórico? Esta ação não pode ser desfeita.`
+      )
+    ) {
+      return;
+    }
+    const { error } = await supabase
+      .from('matches')
+      .delete()
+      .eq('group_id', currentGroup.id)
+      .eq('status', 'finished');
+
+    if (error) {
+      alert('Erro ao limpar histórico: ' + error.message);
+      return;
+    }
+    const remaining = matches.filter((m) => m.status !== 'finished');
+    setMatches(remaining);
+    if (activeMatch?.status === 'finished') {
+      setActiveMatch(remaining[0] || null);
+      if (!remaining[0]) {
+        setRosters([]);
+        setEvents([]);
+      }
+    }
   };
 
   // Handler: Update Score
   const handleUpdateScore = async (scoreA: number, scoreB: number) => {
     if (!activeMatch) return;
+    const nextStatus = activeMatch.status === 'finished' ? 'finished' : 'in_progress';
     const { data } = await supabase
       .from('matches')
-      .update({ score_a: scoreA, score_b: scoreB, status: 'in_progress' })
+      .update({ score_a: scoreA, score_b: scoreB, status: nextStatus })
       .eq('id', activeMatch.id)
       .select()
       .single();
@@ -605,6 +701,16 @@ export const App: React.FC = () => {
                             <span>Votar Craque</span>
                           </button>
                         )}
+                        {isAdmin && (
+                          <button
+                            onClick={() => handleDeleteMatch(activeMatch.id, activeMatch.title)}
+                            className="px-2.5 py-1.5 rounded-xl text-xs font-bold bg-rose-950/50 border border-rose-800/50 text-rose-400 hover:bg-rose-900/60 hover:text-rose-200 transition flex items-center gap-1"
+                            title="Excluir esta partida (Apenas Admin)"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                            <span className="hidden sm:inline">Excluir</span>
+                          </button>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -614,7 +720,15 @@ export const App: React.FC = () => {
                     <MatchMvpPollBanner
                       match={activeMatch}
                       allPlayers={players}
-                      onMvpUpdated={() => fetchData()}
+                      onMvpUpdated={(mvpId) => {
+                        if (!mvpId) return;
+                        setActiveMatch((prev) => (prev ? { ...prev, mvp_player_id: mvpId } : prev));
+                        setMatches((prev) =>
+                          prev.map((m) =>
+                            m.id === activeMatch.id ? { ...m, mvp_player_id: mvpId } : m
+                          )
+                        );
+                      }}
                     />
                   )}
 
@@ -649,17 +763,35 @@ export const App: React.FC = () => {
             )}
 
             {/* Matches History Section */}
-            {matches.length > 1 && (
+            {matches.length > 0 && (
               <div className="pt-4 space-y-3">
-                <h3 className="font-bold text-sm text-slate-300">Histórico de Outras Partidas</h3>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <h3 className="font-bold text-sm text-slate-300">
+                    Histórico de Partidas ({matches.length})
+                  </h3>
+                  {isAdmin && matches.some((m) => m.status === 'finished') && (
+                    <button
+                      onClick={handleClearHistory}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-rose-950/50 hover:bg-rose-900/70 border border-rose-800/50 text-rose-300 text-xs font-bold transition"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>Limpar Histórico de Encerradas</span>
+                    </button>
+                  )}
+                </div>
+
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  {matches
-                    .filter((m) => m.id !== activeMatch?.id)
-                    .map((m) => (
+                  {matches.map((m) => {
+                    const isCurrent = m.id === activeMatch?.id;
+                    return (
                       <div
                         key={m.id}
                         onClick={() => setActiveMatch(m)}
-                        className="bg-slate-900 border border-slate-800 hover:border-slate-700 p-4 rounded-2xl cursor-pointer transition flex items-center justify-between"
+                        className={`bg-slate-900 border p-4 rounded-2xl cursor-pointer transition flex items-center justify-between ${
+                          isCurrent
+                            ? 'border-emerald-500/60 ring-1 ring-emerald-500/30'
+                            : 'border-slate-800 hover:border-slate-700'
+                        }`}
                       >
                         <div>
                           <div className="flex items-center gap-2">
@@ -669,15 +801,41 @@ export const App: React.FC = () => {
                             <span className="text-[11px] text-slate-500">
                               {new Date(m.match_date).toLocaleDateString('pt-BR')}
                             </span>
+                            {m.status === 'finished' ? (
+                              <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-slate-800 text-slate-400">
+                                Encerrada
+                              </span>
+                            ) : (
+                              <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-emerald-950 text-emerald-400">
+                                Ativa
+                              </span>
+                            )}
                           </div>
                           <h4 className="font-bold text-sm text-white mt-0.5">{m.title}</h4>
                           <p className="text-xs text-slate-400">
                             {m.team_a_name} {m.score_a} × {m.score_b} {m.team_b_name}
                           </p>
                         </div>
-                        <ArrowRight className="w-4 h-4 text-slate-500" />
+
+                        <div className="flex items-center gap-2">
+                          {isAdmin && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleDeleteMatch(m.id, m.title);
+                              }}
+                              className="p-2 rounded-xl bg-rose-950/40 hover:bg-rose-900/70 text-rose-400 border border-rose-800/40 transition"
+                              title="Excluir partida do histórico (Admin)"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          )}
+                          <ArrowRight className="w-4 h-4 text-slate-500" />
+                        </div>
                       </div>
-                    ))}
+                    );
+                  })}
                 </div>
               </div>
             )}
@@ -770,11 +928,32 @@ export const App: React.FC = () => {
                       </div>
                     </div>
 
-                    <div className="flex flex-col items-end">
-                      <div className="px-2 py-0.5 rounded-lg bg-emerald-950 border border-emerald-800/60 text-emerald-400 font-extrabold text-xs">
-                        {stat?.overall_index || Math.round((p.base_rating || 6.5) * 10)}
+                    <div className="flex items-center gap-2">
+                      <div className="flex flex-col items-end">
+                        <div className="px-2 py-0.5 rounded-lg bg-emerald-950 border border-emerald-800/60 text-emerald-400 font-extrabold text-xs">
+                          {stat?.overall_index || Math.round((p.base_rating || 6.5) * 10)}
+                        </div>
+                        <span className="text-[9px] text-slate-500 mt-0.5">Overall</span>
                       </div>
-                      <span className="text-[9px] text-slate-500 mt-0.5">Overall</span>
+                      {isAdmin && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (
+                              confirm(
+                                `Deseja realmente excluir o jogador "${p.nickname || p.name}"?`
+                              )
+                            ) {
+                              handleDeletePlayer(p.id);
+                            }
+                          }}
+                          className="p-2 rounded-xl bg-rose-950/40 hover:bg-rose-900/70 text-rose-400 border border-rose-800/40 transition"
+                          title="Excluir jogador (Admin)"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      )}
                     </div>
                   </div>
                 );
@@ -829,6 +1008,21 @@ export const App: React.FC = () => {
               >
                 Editar Regras e Pesos do Ranking
               </button>
+
+              {isAdmin && (
+                <div className="pt-4 border-t border-slate-800 space-y-2">
+                  <span className="text-[11px] font-black uppercase tracking-wider text-rose-400 block">
+                    🔒 Área Exclusiva do Administrador
+                  </span>
+                  <button
+                    onClick={handleClearHistory}
+                    className="w-full py-2.5 rounded-2xl bg-rose-950/40 hover:bg-rose-900/60 text-rose-300 text-xs font-bold border border-rose-800/60 flex items-center justify-center gap-2 transition"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                    <span>Limpar Histórico de Partidas Encerradas</span>
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -843,6 +1037,7 @@ export const App: React.FC = () => {
           player={editingPlayer}
           groupId={currentGroup?.id || ''}
           onSave={handleSavePlayer}
+          onDeletePlayer={handleDeletePlayer}
           onPlayerAccountCreated={fetchData}
           onClose={() => {
             setShowPlayerModal(false);

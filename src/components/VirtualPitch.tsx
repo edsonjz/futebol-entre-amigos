@@ -1,5 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { Player, MatchRoster, Match, MatchEvent } from '../types/database';
+import { useAuth } from '../context/AuthContext';
 import { toPng } from 'html-to-image';
 import confetti from 'canvas-confetti';
 import {
@@ -44,6 +45,7 @@ export const VirtualPitch: React.FC<VirtualPitchProps> = ({
   onFinishMatch,
   readOnly = false,
 }) => {
+  const { isAdmin } = useAuth();
   const pitchRef = useRef<HTMLDivElement>(null);
 
   // Quick Goal / Action Popover state when clicking a player on the pitch
@@ -138,11 +140,15 @@ export const VirtualPitch: React.FC<VirtualPitchProps> = ({
 
       await onUpdateMatchScore(newScoreA, newScoreB);
 
-      confetti({
-        particleCount: 75,
-        spread: 75,
-        origin: { y: 0.6 },
-      });
+      try {
+        confetti({
+          particleCount: 75,
+          spread: 75,
+          origin: { y: 0.6 },
+        });
+      } catch {
+        // ignore confetti error
+      }
 
       const scorerName = scorerPlayer?.nickname || scorerPlayer?.name || 'Jogador';
       const assistName = assistPlayer ? ` (👟 Assist: ${assistPlayer.nickname || assistPlayer.name})` : '';
@@ -216,15 +222,17 @@ export const VirtualPitch: React.FC<VirtualPitchProps> = ({
     setShowSubSelector(false);
   };
 
-  // Delete / Undo Goal Event
+  // Delete / Undo Goal Event (Admin only)
   const handleUndoEvent = async (event: MatchEvent) => {
-    if (readOnly) return;
+    if (readOnly || !isAdmin) return;
     if (event.event_type === 'goal' || event.event_type === 'own_goal') {
       const newScoreA = event.team === 'A' ? Math.max(0, (match.score_a || 0) - 1) : match.score_a || 0;
       const newScoreB = event.team === 'B' ? Math.max(0, (match.score_b || 0) - 1) : match.score_b || 0;
       await onUpdateMatchScore(newScoreA, newScoreB);
     }
     await onDeleteEvent(event.id);
+    setGoalBanner('🗑️ Gol excluído e placar corrigido!');
+    setTimeout(() => setGoalBanner(null), 3500);
   };
 
   // Toggle starter / sub
@@ -757,13 +765,14 @@ export const VirtualPitch: React.FC<VirtualPitchProps> = ({
                   ) : (
                     <span className="text-[10px] text-slate-500">(Sem assist.)</span>
                   )}
-                  {!readOnly && (
+                  {!readOnly && isAdmin && (
                     <button
                       onClick={() => handleUndoEvent(ev)}
-                      className="text-slate-500 hover:text-rose-400 ml-1 p-0.5"
-                      title="Desfazer gol"
+                      className="flex items-center gap-1 px-2 py-0.5 rounded-lg bg-rose-950/60 hover:bg-rose-900 text-rose-300 border border-rose-800/50 ml-1 text-[10px] font-bold transition"
+                      title="Excluir gol marcado errado"
                     >
-                      <Trash2 className="w-3.5 h-3.5" />
+                      <Trash2 className="w-3 h-3" />
+                      <span>Excluir</span>
                     </button>
                   )}
                 </div>
@@ -1019,6 +1028,36 @@ export const VirtualPitch: React.FC<VirtualPitchProps> = ({
                     <Zap className="w-4 h-4 fill-white" />
                     <span>GOL SEM ASSISTÊNCIA (1 TOQUE)</span>
                   </button>
+
+                  {isAdmin &&
+                    events.some(
+                      (ev) =>
+                        (ev.event_type === 'goal' || ev.event_type === 'own_goal') &&
+                        ev.player_id === activeActionRoster.player_id
+                    ) && (
+                      <button
+                        type="button"
+                        disabled={isSubmittingGoal}
+                        onClick={async () => {
+                          const playerGoals = events.filter(
+                            (ev) =>
+                              (ev.event_type === 'goal' || ev.event_type === 'own_goal') &&
+                              ev.player_id === activeActionRoster.player_id
+                          );
+                          const lastGoal = playerGoals[playerGoals.length - 1];
+                          if (lastGoal) {
+                            await handleUndoEvent(lastGoal);
+                            setActiveActionRoster(null);
+                          }
+                        }}
+                        className="w-full py-2.5 px-4 rounded-2xl bg-rose-950/60 hover:bg-rose-900/80 border border-rose-800/70 text-rose-300 font-bold text-xs flex items-center justify-center gap-1.5 transition"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                        <span>
+                          Excluir Último Gol de {activePlayerObj.nickname || activePlayerObj.name} (Correção)
+                        </span>
+                      </button>
+                    )}
                 </div>
 
                 {/* 1-TAP ASSIST SELECTION GRID */}

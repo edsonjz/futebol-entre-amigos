@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Match, MatchEvent, MatchRoster, Player, MatchEventType } from '../types/database';
+import { useAuth } from '../context/AuthContext';
 import confetti from 'canvas-confetti';
 import {
   Play,
@@ -39,6 +40,7 @@ export const MatchLiveCenter: React.FC<MatchLiveCenterProps> = ({
   onFinishMatch,
   readOnly = false,
 }) => {
+  const { isAdmin } = useAuth();
   // Timer state
   const [seconds, setSeconds] = useState(match.current_minute * 60 || 0);
   const [isRunning, setIsRunning] = useState(false);
@@ -425,13 +427,14 @@ export const MatchLiveCenter: React.FC<MatchLiveCenterProps> = ({
                       </div>
                     </div>
 
-                    {!readOnly && (
+                    {!readOnly && isAdmin && (
                       <button
                         onClick={() => handleDeleteEventClick(event)}
-                        className="text-slate-500 hover:text-rose-400 p-1.5 rounded-lg hover:bg-slate-700/50 transition"
-                        title="Remover evento"
+                        className="flex items-center gap-1 px-2 py-1 rounded-lg bg-rose-950/60 hover:bg-rose-900 text-rose-300 border border-rose-800/50 text-[10px] font-bold transition"
+                        title="Excluir gol/evento (Admin)"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
+                        <span>Excluir</span>
                       </button>
                     )}
                   </div>

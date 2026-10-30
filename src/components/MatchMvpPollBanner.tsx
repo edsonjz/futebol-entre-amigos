@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
-import { Match, Player, Poll, PollVote } from '../types/database';
+import { Match, Player, Poll, PollVote, PollOption } from '../types/database';
 import { Trophy, Crown, Check, Users, Lock, Unlock, Sparkles, Vote } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
@@ -18,17 +18,17 @@ export const MatchMvpPollBanner: React.FC<MatchMvpPollBannerProps> = ({
   onMvpUpdated,
   compact = false,
 }) => {
-  const { user, userRole } = useAuth();
+  const { user, isAdmin } = useAuth();
   const [poll, setPoll] = useState<Poll | null>(null);
   const [votes, setVotes] = useState<PollVote[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isVoting, setIsVoting] = useState(false);
+  const instanceIdRef = useRef<string>(Math.random().toString(36).slice(2, 9));
 
   const loadOrEnsureMvpPoll = async () => {
     if (!match?.id) return;
     setIsLoading(true);
     try {
-      // Ensure the MVP poll exists in database for this match
       await supabase.rpc('ensure_match_mvp_poll', { p_match_id: match.id });
 
       const { data: pollData } = await supabase
@@ -61,43 +61,52 @@ export const MatchMvpPollBanner: React.FC<MatchMvpPollBannerProps> = ({
   };
 
   useEffect(() => {
-    if (match.status === 'finished') {
+    if (match?.status === 'finished') {
       loadOrEnsureMvpPoll();
     }
-  }, [match.id, match.status]);
+  }, [match?.id, match?.status]);
 
-  // Realtime subscription for votes on this poll
+  // Unique channel name per component instance to prevent Supabase v2 duplicate channel subscription crash
   useEffect(() => {
     if (!poll?.id) return;
 
-    const channel = supabase
-      .channel(`mvp-poll-${poll.id}`)
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'poll_votes', filter: `poll_id=eq.${poll.id}` },
-        async () => {
-          const { data } = await supabase
-            .from('poll_votes')
-            .select('*')
-            .eq('poll_id', poll.id);
-          if (data) setVotes(data as PollVote[]);
-        }
-      )
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'polls', filter: `id=eq.${poll.id}` },
-        (payload) => {
-          if (payload.new) setPoll(payload.new as Poll);
-        }
-      )
-      .subscribe();
+    const channelName = `mvp-poll-${poll.id}-${instanceIdRef.current}`;
+    let channel: ReturnType<typeof supabase.channel> | null = null;
+
+    try {
+      channel = supabase
+        .channel(channelName)
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'poll_votes', filter: `poll_id=eq.${poll.id}` },
+          async () => {
+            const { data } = await supabase
+              .from('poll_votes')
+              .select('*')
+              .eq('poll_id', poll.id);
+            if (data) setVotes(data as PollVote[]);
+          }
+        )
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'polls', filter: `id=eq.${poll.id}` },
+          (payload) => {
+            if (payload.new) setPoll(payload.new as Poll);
+          }
+        )
+        .subscribe();
+    } catch (err) {
+      console.error('Realtime channel setup error:', err);
+    }
 
     return () => {
-      supabase.removeChannel(channel);
+      if (channel) {
+        supabase.removeChannel(channel).catch(() => {});
+      }
     };
   }, [poll?.id]);
 
-  if (match.status !== 'finished') return null;
+  if (!match || match.status !== 'finished') return null;
 
   if (isLoading) {
     return (
@@ -109,12 +118,12 @@ export const MatchMvpPollBanner: React.FC<MatchMvpPollBannerProps> = ({
 
   if (!poll) return null;
 
+  const safeOptions: PollOption[] = Array.isArray(poll.options) ? poll.options : [];
   const totalVotes = votes.length;
   const currentUserId = user?.id;
   const myVote = currentUserId ? votes.find((v) => v.user_id === currentUserId) : null;
 
-  // Calculate vote counts per option
-  const optionsWithVotes = (poll.options || []).map((opt) => {
+  const optionsWithVotes = safeOptions.map((opt) => {
     const count = votes.filter((v) => v.option_id === opt.id).length;
     const percentage = totalVotes > 0 ? Math.round((count / totalVotes) * 100) : 0;
     const player = allPlayers.find((p) => p.id === opt.id);
@@ -126,7 +135,7 @@ export const MatchMvpPollBanner: React.FC<MatchMvpPollBannerProps> = ({
     };
   });
 
-  const maxVotes = Math.max(0, ...optionsWithVotes.map((o) => o.count));
+  const maxVotes = optionsWithVotes.reduce((max, o) => (o.count > max ? o.count : max), 0);
   const leaderOption =
     maxVotes > 0 ? optionsWithVotes.find((o) => o.count === maxVotes) || null : null;
 
@@ -159,7 +168,6 @@ export const MatchMvpPollBanner: React.FC<MatchMvpPollBannerProps> = ({
         if (error) throw error;
       }
 
-      // Optimistic state update
       const updatedVotes: PollVote[] = [
         ...votes.filter((v) => v.user_id !== user.id),
         {
@@ -172,11 +180,15 @@ export const MatchMvpPollBanner: React.FC<MatchMvpPollBannerProps> = ({
       ];
       setVotes(updatedVotes);
 
-      confetti({
-        particleCount: 55,
-        spread: 60,
-        origin: { y: 0.7 },
-      });
+      try {
+        confetti({
+          particleCount: 55,
+          spread: 60,
+          origin: { y: 0.7 },
+        });
+      } catch {
+        // ignore confetti error
+      }
 
       if (onMvpUpdated) {
         onMvpUpdated(optionId);
@@ -190,7 +202,7 @@ export const MatchMvpPollBanner: React.FC<MatchMvpPollBannerProps> = ({
   };
 
   const handleToggleLock = async () => {
-    if (!poll) return;
+    if (!poll || !isAdmin) return;
     const nextClosed = !poll.is_closed;
     await supabase.from('polls').update({ is_closed: nextClosed }).eq('id', poll.id);
     setPoll({ ...poll, is_closed: nextClosed });
@@ -235,7 +247,7 @@ export const MatchMvpPollBanner: React.FC<MatchMvpPollBannerProps> = ({
         <div className="flex items-center gap-2 self-start sm:self-center">
           {leaderOption && (
             <div className="flex items-center gap-2.5 bg-amber-500/10 border border-amber-500/30 px-3.5 py-2 rounded-2xl">
-              <Crown className="w-5 h-5 text-amber-400 shrink-0 animate-bounce" />
+              <Crown className="w-5 h-5 text-amber-400 shrink-0" />
               <div>
                 <span className="text-[10px] font-black uppercase tracking-wider text-amber-300 block">
                   {poll.is_closed ? 'Craque Eleito (MVP)' : 'Líder da Votação'}
@@ -248,8 +260,9 @@ export const MatchMvpPollBanner: React.FC<MatchMvpPollBannerProps> = ({
             </div>
           )}
 
-          {userRole === 'admin' && (
+          {isAdmin && (
             <button
+              type="button"
               onClick={handleToggleLock}
               title={poll.is_closed ? 'Reabrir Enquete de Craque' : 'Encerrar Enquete de Craque'}
               className="p-2.5 rounded-2xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 transition"
@@ -284,7 +297,6 @@ export const MatchMvpPollBanner: React.FC<MatchMvpPollBannerProps> = ({
                   : 'border-slate-800 bg-slate-950/60 hover:bg-slate-800/70 hover:border-slate-700'
               }`}
             >
-              {/* Animated Vote Percentage Bar */}
               <div
                 className={`absolute top-0 bottom-0 left-0 transition-all duration-500 ${
                   isSelected || isLeader ? 'bg-amber-500/20' : 'bg-slate-700/25'
@@ -294,7 +306,6 @@ export const MatchMvpPollBanner: React.FC<MatchMvpPollBannerProps> = ({
 
               <div className="relative z-10 flex items-center justify-between gap-2">
                 <div className="flex items-center gap-2.5 min-w-0">
-                  {/* Radio / Avatar */}
                   <div className="relative w-9 h-9 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-xs font-bold text-white overflow-hidden shrink-0">
                     {opt.player?.photo_url && !isPdfUrl(opt.player.photo_url) ? (
                       <img

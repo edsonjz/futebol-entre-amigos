@@ -9,6 +9,7 @@ interface AuthContextType {
   profile: Profile | null;
   currentGroup: Group | null;
   userRole: UserRole;
+  isAdmin: boolean;
   isLoading: boolean;
   signIn: (email: string, password: string) => Promise<{ error: Error | null }>;
   signUp: (email: string, password: string, fullName: string, nickname?: string) => Promise<{ error: Error | null }>;
@@ -25,7 +26,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [currentGroup, setCurrentGroup] = useState<Group | null>(null);
-  const [userRole, setUserRole] = useState<UserRole>('admin');
+  const [userRole, setUserRole] = useState<UserRole>('visitor');
   const [isLoading, setIsLoading] = useState(true);
 
   const fetchProfileAndRole = useCallback(async (userId: string, userEmail?: string) => {
@@ -40,7 +41,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setProfile(data as Profile);
       }
 
-      // Check role in group_members
       if (userEmail?.toLowerCase() === 'edsonjz@gmail.com') {
         setUserRole('admin');
         return;
@@ -56,7 +56,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (memberData?.role) {
         setUserRole(memberData.role as UserRole);
       } else {
-        setUserRole('admin');
+        setUserRole('player');
       }
     } catch (err) {
       console.error('Error fetching profile:', err);
@@ -121,6 +121,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (!mounted) return;
         setSession(initialSession);
         setUser(initialSession?.user ?? null);
+        if (!initialSession?.user) {
+          setUserRole('visitor');
+        }
       } catch (err) {
         console.error('Auth initialization error:', err);
       } finally {
@@ -137,7 +140,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setUser(currentSession?.user ?? null);
       if (!currentSession?.user) {
         setProfile(null);
-        setUserRole('admin');
+        setUserRole('visitor');
       }
     });
 
@@ -154,6 +157,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (!currentGroup?.id) {
         loadOrCreateDefaultGroup();
       }
+    } else {
+      setUserRole('visitor');
     }
   }, [user?.id, user?.email, currentGroup?.id, fetchProfileAndRole, loadOrCreateDefaultGroup]);
 
@@ -191,7 +196,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setUser(null);
     setSession(null);
     setProfile(null);
-    setUserRole('admin');
+    setUserRole('visitor');
   };
 
   const refreshProfile = async () => {
@@ -200,6 +205,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  const isAdmin = Boolean(user && (userRole === 'admin' || user.email?.toLowerCase() === 'edsonjz@gmail.com'));
+
   return (
     <AuthContext.Provider
       value={{
@@ -207,7 +214,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         session,
         profile,
         currentGroup,
-        userRole,
+        userRole: isAdmin ? 'admin' : userRole,
+        isAdmin,
         isLoading,
         signIn,
         signUp,

@@ -70,28 +70,36 @@ export const PollsView: React.FC<PollsViewProps> = ({ groupId, allPlayers = [] }
   // Realtime subscription
   useEffect(() => {
     if (!groupId) return;
-    const channel = supabase
-      .channel('polls-channel')
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'poll_votes' },
-        () => {
-          supabase.from('poll_votes').select('*').then(({ data }) => {
-            if (data) setVotes(data as PollVote[]);
-          });
-        }
-      )
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'polls', filter: `group_id=eq.${groupId}` },
-        () => {
-          fetchPollsAndVotes();
-        }
-      )
-      .subscribe();
+    const channelName = `polls-channel-${groupId}-${Math.random().toString(36).slice(2, 8)}`;
+    let channel: ReturnType<typeof supabase.channel> | null = null;
+    try {
+      channel = supabase
+        .channel(channelName)
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'poll_votes' },
+          () => {
+            supabase.from('poll_votes').select('*').then(({ data }) => {
+              if (data) setVotes(data as PollVote[]);
+            });
+          }
+        )
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'polls', filter: `group_id=eq.${groupId}` },
+          () => {
+            fetchPollsAndVotes();
+          }
+        )
+        .subscribe();
+    } catch (err) {
+      console.error('Polls realtime setup error:', err);
+    }
 
     return () => {
-      supabase.removeChannel(channel);
+      if (channel) {
+        supabase.removeChannel(channel).catch(() => {});
+      }
     };
   }, [groupId]);
 
