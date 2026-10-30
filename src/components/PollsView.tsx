@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { Poll, PollOption, PollVote } from '../types/database';
+import { Poll, PollOption, PollVote, Player } from '../types/database';
 import { supabase } from '../lib/supabase';
 import {
   Vote,
@@ -13,16 +13,17 @@ import {
   Users,
   Sparkles,
   Check,
-  AlertCircle,
-  HelpCircle,
+  Crown,
+  Trophy,
   X
 } from 'lucide-react';
 
 interface PollsViewProps {
   groupId: string;
+  allPlayers?: Player[];
 }
 
-export const PollsView: React.FC<PollsViewProps> = ({ groupId }) => {
+export const PollsView: React.FC<PollsViewProps> = ({ groupId, allPlayers = [] }) => {
   const { user, userRole } = useAuth();
   const [polls, setPolls] = useState<Poll[]>([]);
   const [votes, setVotes] = useState<PollVote[]>([]);
@@ -32,7 +33,7 @@ export const PollsView: React.FC<PollsViewProps> = ({ groupId }) => {
   // New poll form state
   const [newTitle, setNewTitle] = useState('');
   const [newDesc, setNewDesc] = useState('');
-  const [newType, setNewType] = useState<'custom' | 'presence'>('presence');
+  const [newType, setNewType] = useState<'custom' | 'presence' | 'mvp'>('presence');
   const [optionsList, setOptionsList] = useState<string[]>(['✅ Sim, vou jogar', '⏳ Em dúvida', '❌ Não posso ir']);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -266,12 +267,22 @@ export const PollsView: React.FC<PollsViewProps> = ({ groupId }) => {
             const pollVotes = votes.filter((v) => v.poll_id === poll.id);
             const totalVotes = pollVotes.length;
             const myVote = user ? pollVotes.find((v) => v.user_id === user.id) : null;
+            const isMvpPoll = poll.poll_type === 'mvp';
+
+            const maxVotes = Math.max(
+              0,
+              ...poll.options.map((opt) => pollVotes.filter((v) => v.option_id === opt.id).length)
+            );
 
             return (
               <div
                 key={poll.id}
                 className={`relative bg-slate-900/90 border rounded-3xl p-5 shadow-xl transition flex flex-col justify-between ${
-                  poll.is_closed ? 'border-slate-800 opacity-80' : 'border-slate-800 hover:border-slate-700'
+                  poll.is_closed
+                    ? 'border-slate-800 opacity-80'
+                    : isMvpPoll
+                    ? 'border-amber-500/40 hover:border-amber-400/60'
+                    : 'border-slate-800 hover:border-slate-700'
                 }`}
               >
                 <div>
@@ -279,12 +290,18 @@ export const PollsView: React.FC<PollsViewProps> = ({ groupId }) => {
                   <div className="flex items-center justify-between gap-2 mb-3">
                     <span
                       className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${
-                        poll.poll_type === 'presence'
+                        poll.poll_type === 'mvp'
+                          ? 'bg-amber-500/15 text-amber-300 border border-amber-500/30'
+                          : poll.poll_type === 'presence'
                           ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
                           : 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/20'
                       }`}
                     >
-                      {poll.poll_type === 'presence' ? '⚽ Presença na Pelada' : '📊 Votação Livre'}
+                      {poll.poll_type === 'mvp'
+                        ? '🏆 Craque do Jogo (MVP)'
+                        : poll.poll_type === 'presence'
+                        ? '⚽ Presença na Pelada'
+                        : '📊 Votação Livre'}
                     </span>
 
                     <div className="flex items-center gap-1.5 text-xs">
@@ -326,11 +343,12 @@ export const PollsView: React.FC<PollsViewProps> = ({ groupId }) => {
                   )}
 
                   {/* Options List */}
-                  <div className="space-y-2.5 my-4">
+                  <div className="space-y-2.5 my-4 max-h-72 overflow-y-auto pr-1">
                     {poll.options.map((option) => {
                       const optVotes = pollVotes.filter((v) => v.option_id === option.id).length;
                       const percentage = totalVotes > 0 ? Math.round((optVotes / totalVotes) * 100) : 0;
                       const isSelected = myVote?.option_id === option.id;
+                      const isLeader = isMvpPoll && maxVotes > 0 && optVotes === maxVotes;
 
                       return (
                         <button
@@ -339,14 +357,20 @@ export const PollsView: React.FC<PollsViewProps> = ({ groupId }) => {
                           onClick={() => handleVote(poll.id, option.id)}
                           className={`relative w-full text-left p-3 rounded-2xl border transition overflow-hidden group ${
                             isSelected
-                              ? 'border-emerald-500 bg-emerald-950/20 shadow-md shadow-emerald-950/50 ring-1 ring-emerald-500/50'
+                              ? isMvpPoll
+                                ? 'border-amber-400 bg-amber-950/25 shadow-md shadow-amber-950/50 ring-1 ring-amber-400/50'
+                                : 'border-emerald-500 bg-emerald-950/20 shadow-md shadow-emerald-950/50 ring-1 ring-emerald-500/50'
                               : 'border-slate-800 bg-slate-800/40 hover:bg-slate-800/80 hover:border-slate-700'
                           }`}
                         >
                           {/* Progress fill bar */}
                           <div
                             className={`absolute top-0 bottom-0 left-0 transition-all duration-500 ${
-                              isSelected ? 'bg-emerald-500/20' : 'bg-slate-700/30'
+                              isSelected || isLeader
+                                ? isMvpPoll
+                                  ? 'bg-amber-500/20'
+                                  : 'bg-emerald-500/20'
+                                : 'bg-slate-700/30'
                             }`}
                             style={{ width: `${percentage}%` }}
                           />
@@ -356,12 +380,15 @@ export const PollsView: React.FC<PollsViewProps> = ({ groupId }) => {
                               <div
                                 className={`w-4 h-4 rounded-full border flex items-center justify-center transition ${
                                   isSelected
-                                    ? 'border-emerald-400 bg-emerald-500 text-white'
+                                    ? isMvpPoll
+                                      ? 'border-amber-400 bg-amber-500 text-slate-950'
+                                      : 'border-emerald-400 bg-emerald-500 text-white'
                                     : 'border-slate-600 bg-slate-900 group-hover:border-slate-400'
                                 }`}
                               >
                                 {isSelected && <Check className="w-2.5 h-2.5 stroke-[3]" />}
                               </div>
+                              {isLeader && <Crown className="w-3.5 h-3.5 text-amber-400 shrink-0" />}
                               <span className="text-xs font-semibold text-white">
                                 {option.text}
                               </span>
@@ -428,20 +455,40 @@ export const PollsView: React.FC<PollsViewProps> = ({ groupId }) => {
                 <label className="block text-xs font-bold text-slate-300 mb-1">
                   Tipo de Votação
                 </label>
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-3 gap-2">
                   <button
                     type="button"
                     onClick={() => {
                       setNewType('presence');
                       setOptionsList(['✅ Sim, vou jogar', '⏳ Em dúvida', '❌ Não posso ir']);
                     }}
-                    className={`py-2 px-3 rounded-xl border text-xs font-bold transition ${
+                    className={`py-2 px-2 rounded-xl border text-[11px] font-bold transition ${
                       newType === 'presence'
                         ? 'border-emerald-500 bg-emerald-500/10 text-emerald-300'
                         : 'border-slate-700 bg-slate-800 text-slate-400'
                     }`}
                   >
-                    ⚽ Presença no Jogo
+                    ⚽ Presença
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setNewType('mvp');
+                      setNewTitle('🏆 Quem foi o Craque do Jogo (MVP)?');
+                      setNewDesc('Vote em quem jogou mais bola na partida!');
+                      if (allPlayers.length >= 2) {
+                        setOptionsList(allPlayers.map((p) => p.nickname || p.name));
+                      } else {
+                        setOptionsList(['Jogador 1', 'Jogador 2', 'Jogador 3']);
+                      }
+                    }}
+                    className={`py-2 px-2 rounded-xl border text-[11px] font-bold transition ${
+                      newType === 'mvp'
+                        ? 'border-amber-500 bg-amber-500/15 text-amber-300'
+                        : 'border-slate-700 bg-slate-800 text-slate-400'
+                    }`}
+                  >
+                    🏆 Craque
                   </button>
                   <button
                     type="button"
@@ -449,13 +496,13 @@ export const PollsView: React.FC<PollsViewProps> = ({ groupId }) => {
                       setNewType('custom');
                       setOptionsList(['Opção 1', 'Opção 2', 'Opção 3']);
                     }}
-                    className={`py-2 px-3 rounded-xl border text-xs font-bold transition ${
+                    className={`py-2 px-2 rounded-xl border text-[11px] font-bold transition ${
                       newType === 'custom'
                         ? 'border-emerald-500 bg-emerald-500/10 text-emerald-300'
                         : 'border-slate-700 bg-slate-800 text-slate-400'
                     }`}
                   >
-                    📊 Votação Livre
+                    📊 Livre
                   </button>
                 </div>
               </div>

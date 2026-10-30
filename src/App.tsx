@@ -23,6 +23,7 @@ import { FinancesModal } from './components/FinancesModal';
 import { GroupSettingsModal } from './components/GroupSettingsModal';
 import { PollsView } from './components/PollsView';
 import { ProfileModal } from './components/ProfileModal';
+import { MatchMvpPollBanner } from './components/MatchMvpPollBanner';
 import {
 
   Calendar,
@@ -421,6 +422,9 @@ export const App: React.FC = () => {
       .select()
       .single();
 
+    // Ensure the official Post-Match MVP Poll exists for this match
+    await supabase.rpc('ensure_match_mvp_poll', { p_match_id: activeMatch.id });
+
     if (data) {
       setActiveMatch(data as Match);
       setMatches((prev) => prev.map((m) => (m.id === data.id ? (data as Match) : m)));
@@ -594,15 +598,25 @@ export const App: React.FC = () => {
                         {activeMatch.status === 'finished' && (
                           <button
                             onClick={() => setShowRatingModal(true)}
-                            className="px-2.5 py-1.5 rounded-xl text-xs text-amber-400 hover:text-amber-300 transition"
-                            title="Avaliar jogadores desta partida"
+                            className="px-3 py-1.5 rounded-xl text-xs font-bold bg-amber-500/15 border border-amber-500/30 text-amber-300 hover:bg-amber-500/25 transition flex items-center gap-1"
+                            title="Votar no Craque do Jogo e dar notas"
                           >
-                            <Star className="w-3.5 h-3.5 fill-amber-400" />
+                            <Trophy className="w-3.5 h-3.5 text-amber-400" />
+                            <span>Votar Craque</span>
                           </button>
                         )}
                       </div>
                     </div>
                   </div>
+
+                  {/* Official Post-Match MVP Voting Poll Banner (always displayed when match is finished) */}
+                  {activeMatch.status === 'finished' && (
+                    <MatchMvpPollBanner
+                      match={activeMatch}
+                      allPlayers={players}
+                      onMvpUpdated={() => fetchData()}
+                    />
+                  )}
 
                   {/* Render Virtual Pitch OR Live Match Center */}
                   {matchViewMode === 'pitch' ? (
@@ -771,7 +785,7 @@ export const App: React.FC = () => {
 
         {/* TABS: POLLS */}
         {currentTab === 'polls' && currentGroup?.id && (
-          <PollsView groupId={currentGroup.id} />
+          <PollsView groupId={currentGroup.id} allPlayers={players} />
         )}
 
         {/* TABS: RANKINGS */}

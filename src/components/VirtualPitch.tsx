@@ -519,6 +519,16 @@ export const VirtualPitch: React.FC<VirtualPitchProps> = ({
                 <Share2 className="w-3.5 h-3.5" />
                 <span>Zap</span>
               </button>
+              {match.status !== 'finished' && onFinishMatch && (
+                <button
+                  onClick={() => onFinishMatch()}
+                  className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-gradient-to-r from-amber-500 to-yellow-500 hover:from-amber-400 hover:to-yellow-400 text-slate-950 text-xs font-black shadow-lg shadow-amber-950/50 transition active:scale-95"
+                  title="Encerrar partida e abrir enquete de Craque do Jogo"
+                >
+                  <Award className="w-3.5 h-3.5" />
+                  <span>Encerrar & Votar Craque</span>
+                </button>
+              )}
             </div>
           )}
         </div>

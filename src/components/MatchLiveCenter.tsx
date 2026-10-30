@@ -695,10 +695,12 @@ export const MatchLiveCenter: React.FC<MatchLiveCenterProps> = ({
             </div>
 
             <h3 className="text-xl font-black text-white mb-1">Finalizar Partida?</h3>
-            <p className="text-xs text-slate-400 mb-4">
-              O placar final será registrado como {match.score_a} × {match.score_b}. As estatísticas
-              históricas serão consolidadas.
+            <p className="text-xs text-slate-400 mb-3">
+              O placar final será registrado como {match.score_a} × {match.score_b}.
             </p>
+            <div className="mb-4 p-3 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs font-bold">
+              🏆 Ao encerrar, a Enquete Oficial de Craque do Jogo (MVP) será aberta automaticamente para todos votarem!
+            </div>
 
             {/* Select MVP */}
             <div className="text-left mb-5">
